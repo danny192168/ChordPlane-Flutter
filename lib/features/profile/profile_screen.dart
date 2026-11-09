@@ -1,34 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({required this.onDarkModeChanged, super.key});
+
+  final ValueChanged<bool> onDarkModeChanged;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-      ),
+      appBar: AppBar(title: const Text('Profile')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            const CircleAvatar(
-              radius: 42,
-              child: Icon(Icons.person, size: 42),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: SvgPicture.asset(
+                isDark
+                    ? 'assets/chordplane_logo.svg'
+                    : 'assets/chordplane_logo_light.svg',
+                width: 84,
+                height: 84,
+              ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Guitarist Name',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            Text('Guitarist Name', style: theme.textTheme.headlineSmall),
+            Text(
+              '@guitaristname',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-            const Text('@guitaristname'),
             const SizedBox(height: 24),
             ListTile(
               leading: const Icon(Icons.palette_outlined),
-              title: const Text('Theme'),
-              trailing: const Text('Dark'),
-              onTap: () {},
+              title: const Text('Dark mode'),
+              trailing: Switch(value: isDark, onChanged: onDarkModeChanged),
+              onTap: () => onDarkModeChanged(!isDark),
             ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),

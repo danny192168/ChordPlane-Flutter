@@ -110,6 +110,21 @@ class AppTheme {
           borderRadius: BorderRadius.circular(14),
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: primary,
+        foregroundColor: brightness == Brightness.dark ? bgDeep : Colors.white,
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: primary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surface,
         indicatorColor: primary.withValues(alpha: 0.2),
