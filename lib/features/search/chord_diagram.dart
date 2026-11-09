@@ -124,18 +124,55 @@ class _ChordDiagramPainter extends CustomPainter {
 }
 
 Future<void> showChordSheet(BuildContext context, String chord) {
-  final shape = chordShapeFor(chord);
+  final shapes = chordShapesFor(chord);
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
-    builder: (context) => SafeArea(
+    isScrollControlled: true,
+    builder: (context) => _ChordAlternativesSheet(chord: chord, shapes: shapes),
+  );
+}
+
+class _ChordAlternativesSheet extends StatefulWidget {
+  const _ChordAlternativesSheet({required this.chord, required this.shapes});
+
+  final String chord;
+  final List<ChordShape> shapes;
+
+  @override
+  State<_ChordAlternativesSheet> createState() =>
+      _ChordAlternativesSheetState();
+}
+
+class _ChordAlternativesSheetState extends State<_ChordAlternativesSheet> {
+  late final PageController _pageController;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: shape == null
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+        child: widget.shapes.isEmpty
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(chord, style: Theme.of(context).textTheme.headlineSmall),
+                  Text(
+                    widget.chord,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
                   const SizedBox(height: 12),
                   const Text('No common guitar shape is available yet.'),
                 ],
@@ -144,20 +181,65 @@ Future<void> showChordSheet(BuildContext context, String chord) {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'How to play $chord',
+                    'How to play ${widget.chord}',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
-                    width: 260,
-                    height: 300,
-                    child: ChordDiagram(shape: shape),
+                    width: 250,
+                    height: 270,
+                    child: Center(
+                      child: PageView.builder(
+                        controller: _pageController,
+                        itemCount: widget.shapes.length,
+                        onPageChanged: (page) => setState(() => _page = page),
+                        itemBuilder: (_, index) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: ChordDiagram(shape: widget.shapes[index]),
+                        ),
+                      ),
+                    ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Alternative ${_page + 1} of ${widget.shapes.length}',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  if (widget.shapes.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (
+                            var index = 0;
+                            index < widget.shapes.length;
+                            index++
+                          )
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 3,
+                              ),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                width: index == _page ? 18 : 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: index == _page
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).colorScheme.outline,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 8),
                   const Text('Numbers show suggested finger positions.'),
                 ],
               ),
       ),
-    ),
-  );
+    );
+  }
 }

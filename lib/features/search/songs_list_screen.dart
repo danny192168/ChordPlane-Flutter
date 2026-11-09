@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/chord_shapes.dart';
 import '../../core/chord_transposer.dart';
@@ -154,7 +155,7 @@ class SongDetailScreen extends StatefulWidget {
 class _SongDetailScreenState extends State<SongDetailScreen> {
   static const _minTranspose = -11;
   static const _maxTranspose = 11;
-  static const _scrollSpeeds = [30.0, 50.0, 75.0, 100.0, 140.0];
+  static const _scrollSpeeds = [4.0, 7.0, 10.0, 13.0, 16.0, 18.0, 20.0];
   int _transpose = 0;
   int _scrollSpeedIndex = 2;
   double _zoom = 1;
@@ -181,7 +182,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   }
 
   void _handleSongScroll() {
-    final shouldShow = _songScrollController.offset > 120;
+    final shouldShow = _songScrollController.offset > 64;
     if (shouldShow != _showQuickControls && mounted) {
       setState(() {
         _showQuickControls = shouldShow;
@@ -248,28 +249,41 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               ),
               Row(
                 children: [
-                  const Text('Transpose'),
-                  IconButton(
-                    tooltip: 'Transpose down',
-                    onPressed: () => setState(
+                  _AdjustmentControl(
+                    label: 'Transpose',
+                    value: '${_transpose >= 0 ? '+' : ''}$_transpose',
+                    onDecrement: () => setState(
                       () => _transpose = _transpose == _minTranspose
                           ? 0
                           : _transpose - 1,
                     ),
-                    icon: const Icon(Icons.remove_circle_outline),
-                  ),
-                  Text('${_transpose >= 0 ? '+' : ''}$_transpose'),
-                  IconButton(
-                    tooltip: 'Transpose up',
-                    onPressed: () => setState(
+                    onIncrement: () => setState(
                       () => _transpose = _transpose == _maxTranspose
                           ? 0
                           : _transpose + 1,
                     ),
-                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: _isAutoScrolling
+                        ? 'Pause autoscroll'
+                        : 'Start autoscroll',
+                    onPressed: _toggleAutoScroll,
+                    icon: Icon(
+                      _isAutoScrolling ? Icons.pause : Icons.play_arrow,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Show chord diagrams',
+                    onPressed: () => _showAllChords(
+                      transposeLyrics(song.lyrics, _transpose),
+                    ),
+                    icon: const Icon(Icons.grid_view_rounded),
                   ),
                 ],
               ),
+              if (song.youtubeUrl.isNotEmpty)
+                _YouTubeSongCard(url: song.youtubeUrl),
               const Divider(),
               GestureDetector(
                 onScaleStart: (_) => _scaleStartZoom = _zoom,
@@ -290,35 +304,52 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   onChordTap: (chord) => showChordSheet(context, chord),
                 ),
               ),
-              if (song.youtubeUrl.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                SelectableText(song.youtubeUrl),
-              ],
             ],
           ),
-          if (_showQuickControls)
-            Positioned(
-              right: 16,
-              bottom: 16,
-              child: _SongQuickControls(
-                isExpanded: _controlsExpanded,
-                isScrolling: _isAutoScrolling,
-                transpose: _transpose,
-                zoom: _zoom,
-                speedIndex: _scrollSpeedIndex,
-                speedCount: _scrollSpeeds.length,
-                onToggleExpanded: () =>
-                    setState(() => _controlsExpanded = !_controlsExpanded),
-                onTransposeChanged: (value) =>
-                    setState(() => _transpose = value),
-                onZoomChanged: (value) => setState(() => _zoom = value),
-                onToggleAutoScroll: _toggleAutoScroll,
-                onSpeedChanged: (index) =>
-                    setState(() => _scrollSpeedIndex = index),
-                onShowChords: () =>
-                    _showAllChords(transposeLyrics(song.lyrics, _transpose)),
+          Positioned(
+            right: 16,
+            bottom: 152,
+            child: IgnorePointer(
+              ignoring: !_showQuickControls,
+              child: AnimatedOpacity(
+                opacity: _showQuickControls ? 1 : 0,
+                duration: const Duration(milliseconds: 180),
+                child: _SongQuickControls(
+                  isExpanded: _controlsExpanded,
+                  isScrolling: _isAutoScrolling,
+                  transpose: _transpose,
+                  zoom: _zoom,
+                  onToggleExpanded: () =>
+                      setState(() => _controlsExpanded = !_controlsExpanded),
+                  onTransposeChanged: (value) =>
+                      setState(() => _transpose = value),
+                  onZoomChanged: (value) => setState(() => _zoom = value),
+                  onToggleAutoScroll: _toggleAutoScroll,
+                ),
               ),
             ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 48,
+            child: IgnorePointer(
+              ignoring: !_showQuickControls || !_controlsExpanded,
+              child: AnimatedOpacity(
+                opacity: _showQuickControls && _controlsExpanded ? 1 : 0,
+                duration: const Duration(milliseconds: 220),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: _AutoscrollSpeedScrubber(
+                    index: _scrollSpeedIndex,
+                    onChanged: (index) =>
+                        setState(() => _scrollSpeedIndex = index),
+                    speedCount: _scrollSpeeds.length,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -400,119 +431,596 @@ class _SongQuickControls extends StatelessWidget {
     required this.isScrolling,
     required this.transpose,
     required this.zoom,
-    required this.speedIndex,
-    required this.speedCount,
     required this.onToggleExpanded,
     required this.onTransposeChanged,
     required this.onZoomChanged,
     required this.onToggleAutoScroll,
-    required this.onSpeedChanged,
-    required this.onShowChords,
   });
 
   final bool isExpanded;
   final bool isScrolling;
   final int transpose;
   final double zoom;
-  final int speedIndex;
-  final int speedCount;
   final VoidCallback onToggleExpanded;
   final ValueChanged<int> onTransposeChanged;
   final ValueChanged<double> onZoomChanged;
   final VoidCallback onToggleAutoScroll;
-  final ValueChanged<int> onSpeedChanged;
-  final VoidCallback onShowChords;
 
   @override
   Widget build(BuildContext context) {
+    final expandedWidth = (MediaQuery.sizeOf(context).width - 24).clamp(
+      56.0,
+      600.0,
+    );
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
-      width: isExpanded ? 350 : 56,
+      width: isExpanded ? expandedWidth : 56,
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(28),
         boxShadow: const [BoxShadow(blurRadius: 12, color: Colors.black26)],
       ),
-      child: Row(
-        children: [
-          if (isExpanded)
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    IconButton(
-                      tooltip: 'Transpose down',
-                      onPressed: () => onTransposeChanged(
-                        transpose <= -11 ? 0 : transpose - 1,
-                      ),
-                      icon: const Icon(Icons.remove),
-                    ),
-                    Text(
-                      '${transpose >= 0 ? '+' : ''}$transpose',
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                    IconButton(
-                      tooltip: 'Transpose up',
-                      onPressed: () => onTransposeChanged(
-                        transpose >= 11 ? 0 : transpose + 1,
-                      ),
-                      icon: const Icon(Icons.add),
-                    ),
-                    IconButton(
-                      tooltip: isScrolling
-                          ? 'Pause autoscroll'
-                          : 'Start autoscroll',
-                      onPressed: onToggleAutoScroll,
-                      icon: Icon(isScrolling ? Icons.pause : Icons.play_arrow),
-                    ),
-                    PopupMenuButton<int>(
-                      tooltip: 'Autoscroll speed',
-                      initialValue: speedIndex,
-                      onSelected: onSpeedChanged,
-                      itemBuilder: (_) => [
-                        for (var index = 0; index < speedCount; index++)
-                          PopupMenuItem(
-                            value: index,
-                            child: Text('Speed ${index + 1}'),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              if (isExpanded)
+                Positioned(
+                  left: 4,
+                  right: 104,
+                  top: 4,
+                  bottom: 4,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _AdjustmentControl(
+                          label: 'Transpose',
+                          value: '${transpose >= 0 ? '+' : ''}$transpose',
+                          onDecrement: () => onTransposeChanged(
+                            transpose <= -11 ? 0 : transpose - 1,
                           ),
+                          onIncrement: () => onTransposeChanged(
+                            transpose >= 11 ? 0 : transpose + 1,
+                          ),
+                        ),
+                        _AdjustmentControl(
+                          label: 'Zoom',
+                          value: '${(zoom * 100).round()}%',
+                          onDecrement: () =>
+                              onZoomChanged((zoom - 0.1).clamp(0.75, 1.8)),
+                          onIncrement: () =>
+                              onZoomChanged((zoom + 0.1).clamp(0.75, 1.8)),
+                        ),
                       ],
-                      child: const Icon(Icons.speed),
                     ),
-                    IconButton(
-                      tooltip: 'Show chord diagrams',
-                      onPressed: onShowChords,
-                      icon: const Icon(Icons.music_note),
-                    ),
-                    IconButton(
-                      tooltip: 'Zoom out',
-                      onPressed: () =>
-                          onZoomChanged((zoom - 0.1).clamp(0.75, 1.8)),
-                      icon: const Icon(Icons.zoom_out),
-                    ),
-                    Text('${(zoom * 100).round()}%'),
-                    IconButton(
-                      tooltip: 'Zoom in',
-                      onPressed: () =>
-                          onZoomChanged((zoom + 0.1).clamp(0.75, 1.8)),
-                      icon: const Icon(Icons.zoom_in),
-                    ),
-                  ],
+                  ),
+                ),
+              if (isExpanded)
+                Positioned(
+                  right: 48,
+                  top: 4,
+                  child: IconButton(
+                    tooltip: isScrolling
+                        ? 'Pause autoscroll'
+                        : 'Start autoscroll',
+                    onPressed: onToggleAutoScroll,
+                    icon: Icon(isScrolling ? Icons.pause : Icons.play_arrow),
+                  ),
+                ),
+              if (isExpanded)
+                Positioned(
+                  right: 0,
+                  top: 4,
+                  child: _ControlToggleButton(
+                    isExpanded: true,
+                    onPressed: onToggleExpanded,
+                  ),
+                )
+              else
+                Center(
+                  child: _ControlToggleButton(
+                    isExpanded: false,
+                    onPressed: onToggleExpanded,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AdjustmentControl extends StatelessWidget {
+  const _AdjustmentControl({
+    required this.label,
+    required this.value,
+    required this.onDecrement,
+    required this.onIncrement,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFF141A28),
+          border: Border.all(
+            color: const Color(0xFF88A9CE).withValues(alpha: 0.12),
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: const Color(0xFF95A0B8),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-          IconButton(
-            tooltip: isExpanded ? 'Collapse controls' : 'Expand controls',
-            onPressed: onToggleExpanded,
-            icon: Icon(isExpanded ? Icons.chevron_right : Icons.chevron_left),
+            _SoftIconButton(
+              tooltip: '$label down',
+              icon: Icons.remove,
+              onPressed: onDecrement,
+            ),
+            SizedBox(
+              width: 52,
+              child: Text(
+                value,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                softWrap: false,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: const Color(0xFF88A9CE),
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            _SoftIconButton(
+              tooltip: '$label up',
+              icon: Icons.add,
+              onPressed: onIncrement,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SoftIconButton extends StatefulWidget {
+  const _SoftIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  State<_SoftIconButton> createState() => _SoftIconButtonState();
+}
+
+class _SoftIconButtonState extends State<_SoftIconButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = _hovered
+        ? const Color(0xFF88A9CE).withValues(alpha: 0.10)
+        : const Color(0xFF0E1320);
+    final border = _hovered
+        ? const Color(0xFF567393)
+        : const Color(0xFF88A9CE).withValues(alpha: 0.12);
+    final foreground = _hovered
+        ? const Color(0xFF88A9CE)
+        : const Color(0xFF95A0B8);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Listener(
+        onPointerDown: (_) => setState(() => _pressed = true),
+        onPointerUp: (_) => setState(() => _pressed = false),
+        onPointerCancel: (_) => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.95 : 1,
+          duration: const Duration(milliseconds: 100),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: background,
+              border: Border.all(color: border),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: IconButton(
+              tooltip: widget.tooltip,
+              onPressed: widget.onPressed,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 26, height: 26),
+              color: foreground,
+              splashColor: const Color(0xFF88A9CE).withValues(alpha: 0.16),
+              icon: Text(
+                widget.icon == Icons.add ? '+' : '-',
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutoscrollSpeedScrubber extends StatelessWidget {
+  const _AutoscrollSpeedScrubber({
+    required this.index,
+    required this.onChanged,
+    required this.speedCount,
+  });
+
+  final int index;
+  final ValueChanged<int> onChanged;
+  final int speedCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final speedLabel = (0.5 + (index / (speedCount - 1)) * 1.5).toStringAsFixed(
+      1,
+    );
+    return AnimatedSlide(
+      offset: const Offset(0, 0.2),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: SizedBox(
+              height: 20,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _ScrubberLabel(
+                      text: 'AUTOSCROLL SPEED',
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  _ScrubberLabel(
+                    text: '${speedLabel}x',
+                    color: colors.primary,
+                    monospace: true,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 26,
+              activeTrackColor: colors.primary.withValues(alpha: 0.18),
+              inactiveTrackColor: colors.surfaceContainerHighest,
+              overlayColor: colors.primary.withValues(alpha: 0.12),
+              thumbColor: colors.primary,
+              showValueIndicator: ShowValueIndicator.never,
+              trackShape: _SpeedTrackShape(),
+              tickMarkShape: _SpeedTickMarkShape(
+                color: colors.onSurfaceVariant.withValues(alpha: 0.45),
+              ),
+              thumbShape: const _SpeedThumbShape(),
+            ),
+            child: Slider(
+              value: index.toDouble(),
+              min: 0,
+              max: (speedCount - 1).toDouble(),
+              divisions: speedCount - 1,
+              onChanged: (value) => onChanged(value.round()),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _ScrubberLabel(
+                  text: 'Slow',
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.72),
+                ),
+                _ScrubberLabel(
+                  text: 'Normal',
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.72),
+                ),
+                _ScrubberLabel(
+                  text: 'Fast',
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.72),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+class _ScrubberLabel extends StatelessWidget {
+  const _ScrubberLabel({
+    required this.text,
+    required this.color,
+    this.monospace = false,
+  });
+
+  final String text;
+  final Color color;
+  final bool monospace;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: color,
+            fontSize: 10,
+            fontFamily: monospace ? 'monospace' : null,
+            fontWeight: monospace ? FontWeight.bold : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpeedTrackShape extends RoundedRectSliderTrackShape {
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 2,
+  }) {
+    final trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    final canvas = context.canvas;
+    final radius = const Radius.circular(8);
+    final background = Paint()..color = sliderTheme.inactiveTrackColor!;
+    canvas.drawRRect(RRect.fromRectAndRadius(trackRect, radius), background);
+    final activeRect = Rect.fromLTRB(
+      trackRect.left,
+      trackRect.top,
+      thumbCenter.dx,
+      trackRect.bottom,
+    );
+    final fill = Paint()
+      ..shader = LinearGradient(
+        colors: [
+          sliderTheme.activeTrackColor!,
+          sliderTheme.activeTrackColor!.withValues(alpha: 0.45),
+        ],
+      ).createShader(trackRect);
+    canvas.drawRRect(RRect.fromRectAndRadius(activeRect, radius), fill);
+    final border = Paint()
+      ..color = sliderTheme.activeTrackColor!.withValues(alpha: 0.35)
+      ..style = PaintingStyle.stroke;
+    canvas.drawRRect(RRect.fromRectAndRadius(trackRect, radius), border);
+  }
+}
+
+class _SpeedTickMarkShape extends SliderTickMarkShape {
+  const _SpeedTickMarkShape({required this.color});
+
+  final Color color;
+
+  @override
+  Size getPreferredSize({
+    required SliderThemeData sliderTheme,
+    bool isEnabled = false,
+  }) => const Size(1, 10);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required Offset thumbCenter,
+    bool? isEnabled,
+    required TextDirection textDirection,
+  }) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    context.canvas.drawLine(
+      Offset(center.dx, center.dy - 5),
+      Offset(center.dx, center.dy + 5),
+      paint,
+    );
+  }
+}
+
+class _SpeedThumbShape extends RoundSliderThumbShape {
+  const _SpeedThumbShape();
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+    required double value,
+  }) {
+    final canvas = context.canvas;
+    final interaction = activationAnimation.value;
+    final ringPaint = Paint()
+      ..color = sliderTheme.thumbColor!.withValues(alpha: 0.22)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 12 + interaction * 2, ringPaint);
+    final thumbPaint = Paint()..color = sliderTheme.thumbColor!;
+    canvas.drawCircle(center, 9 + interaction * 1.5, thumbPaint);
+  }
+}
+
+class _ControlToggleButton extends StatelessWidget {
+  const _ControlToggleButton({
+    required this.isExpanded,
+    required this.onPressed,
+  });
+
+  final bool isExpanded;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: IconButton(
+        tooltip: isExpanded ? 'Collapse controls' : 'Expand controls',
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        icon: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          transitionBuilder: (child, animation) =>
+              RotationTransition(turns: animation, child: child),
+          child: Icon(
+            isExpanded ? Icons.close : Icons.chevron_left,
+            key: ValueKey(isExpanded),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _YouTubeSongCard extends StatelessWidget {
+  const _YouTubeSongCard({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final videoId = _youtubeVideoId(url);
+    final thumbnailUrl = videoId == null
+        ? null
+        : 'https://img.youtube.com/vi/$videoId/mqdefault.jpg';
+    return Card(
+      margin: const EdgeInsets.only(top: 12, bottom: 4),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+        leading: SizedBox(
+          width: 72,
+          height: 48,
+          child: thumbnailUrl == null
+              ? const _MediaSkeleton()
+              : Image.network(
+                  thumbnailUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const _MediaSkeleton(),
+                ),
+        ),
+        title: const Text('YouTube video'),
+        subtitle: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: IconButton(
+          tooltip: 'Open YouTube video',
+          onPressed: () async {
+            final uri = Uri.tryParse(url);
+            if (uri == null || !await launchUrl(uri)) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Unable to open this video.')),
+                );
+              }
+            }
+          },
+          icon: const Icon(Icons.open_in_new),
+        ),
+      ),
+    );
+  }
+}
+
+class _MediaSkeleton extends StatelessWidget {
+  const _MediaSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Center(child: Icon(Icons.ondemand_video_outlined)),
+    );
+  }
+}
+
+String? _youtubeVideoId(String value) {
+  final uri = Uri.tryParse(value);
+  if (uri == null) return null;
+  if (uri.host.contains('youtu.be')) {
+    return uri.pathSegments.isEmpty ? null : uri.pathSegments.first;
+  }
+  if (uri.host.contains('youtube.com')) return uri.queryParameters['v'];
+  return null;
 }
 
 class _ChordLyrics extends StatelessWidget {
@@ -589,20 +1097,23 @@ class _ChordReferenceSection extends StatelessWidget {
     return ExpansionTile(
       initiallyExpanded: initiallyExpanded,
       tilePadding: EdgeInsets.zero,
+      shape: const Border(),
+      collapsedShape: const Border(),
       title: const Text('Chords in this song'),
       subtitle: Text(
         '${chords.length} unique chord${chords.length == 1 ? '' : 's'}',
       ),
       children: [
         SizedBox(
-          height: 218,
+          height: 232,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: chords.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (_, index) {
               final chord = chords[index];
-              final shape = chordShapeFor(chord);
+              final shapes = chordShapesFor(chord);
+              final shape = shapes.isEmpty ? null : shapes.first;
               return SizedBox(
                 width: 164,
                 child: InkWell(
@@ -619,12 +1130,38 @@ class _ChordReferenceSection extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          chord,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                chord,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 2,
+                                ),
+                                child: Text(
+                                  '${shapes.length}x',
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         if (shape == null)
                           Text(
@@ -632,11 +1169,12 @@ class _ChordReferenceSection extends StatelessWidget {
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.labelSmall,
                           )
-                        else
+                        else ...[
                           SizedBox(
-                            height: 176,
+                            height: 162,
                             child: ChordDiagram(shape: shape),
                           ),
+                        ],
                       ],
                     ),
                   ),

@@ -12,6 +12,33 @@ class ChordShape {
   final int baseFret;
 }
 
+const _cBarre = ChordShape(
+  name: 'C',
+  frets: [-1, 3, 5, 5, 5, 3],
+  fingers: [0, 1, 3, 3, 3, 1],
+  baseFret: 3,
+);
+
+const _cadd9Shape = ChordShape(
+  name: 'C',
+  frets: [-1, 3, 2, 0, 3, 0],
+  fingers: [0, 3, 2, 0, 4, 0],
+);
+
+const _gBarre = ChordShape(
+  name: 'G',
+  frets: [3, 5, 5, 4, 3, 3],
+  fingers: [1, 3, 4, 2, 1, 1],
+  baseFret: 3,
+);
+
+const _dBarre = ChordShape(
+  name: 'D',
+  frets: [-1, 5, 7, 7, 7, 5],
+  fingers: [0, 1, 3, 3, 3, 1],
+  baseFret: 5,
+);
+
 const commonChordShapes = <String, ChordShape>{
   'A': ChordShape(
     name: 'A',
@@ -280,14 +307,29 @@ const commonChordShapes = <String, ChordShape>{
 };
 
 ChordShape? chordShapeFor(String name) {
+  final shapes = chordShapesFor(name);
+  return shapes.isEmpty ? null : shapes.first;
+}
+
+List<ChordShape> chordShapesFor(String name) {
   final normalized = name.trim();
   final direct = commonChordShapes[normalized];
-  if (direct != null) return direct;
-
   const aliases = {'Bb': 'A#', 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#'};
   final sharpName = normalized.replaceFirstMapped(
     RegExp(r'^[A-G]b'),
     (match) => aliases[match.group(0)] ?? match.group(0)!,
   );
-  return commonChordShapes[sharpName];
+  final shape = direct ?? commonChordShapes[sharpName];
+  if (shape == null) return const [];
+
+  switch (sharpName) {
+    case 'C':
+      return [shape, _cBarre, _cadd9Shape];
+    case 'D':
+      return [shape, _dBarre];
+    case 'G':
+      return [shape, _gBarre];
+    default:
+      return [shape];
+  }
 }

@@ -5,6 +5,8 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,7 +54,7 @@ void main() {
   testWidgets('opening a song renders the detail screen', (
     WidgetTester tester,
   ) async {
-    final song = const Song(
+    final song = Song(
       id: 'song-1',
       title: 'Amazing Grace',
       artist: 'Traditional',
@@ -72,11 +74,43 @@ void main() {
     expect(find.byType(SelectableText), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('song controls and chord reference fit without overflow', (
+    WidgetTester tester,
+  ) async {
+    final song = Song(
+      id: 'song-2',
+      title: 'Chord Variations',
+      artist: 'Traditional',
+      key: 'C',
+      lyrics: ('[C]Verse\n\n[D]Bridge\n\n[G]Chorus\n\n' * 12),
+    );
+    SharedPreferences.setMockInitialValues({
+      'offline_songs': '[${songJson(song)}]',
+    });
+    await tester.pumpWidget(const ChordPlaneApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Chord Variations'));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, -180));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.chevron_left), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byIcon(Icons.close), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, 300));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.grid_view_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Chords in this song'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 String songJson(Song song) {
-  final json = song.toJson();
-  return '{"id":"${json['id']}","title":"${json['title']}",'
-      '"artist":"${json['artist']}","key":"${json['key']}",'
-      '"lyrics":"${json['lyrics']}","youtubeUrl":"","isFavorite":false}';
+  return jsonEncode(song.toJson());
 }
